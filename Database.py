@@ -12,6 +12,7 @@ import re
 import datetime
 from pytz import timezone
 import sqlite3
+import time
 
 import secrets as secrets # file that contains your OAuth credentials
 
@@ -341,7 +342,7 @@ if __name__ == "__main__":
             df = pd.DataFrame({'Code': code, 'Headline': k, 'URL':v[0], 'Sentiment_Score': v[1]}, index=[0])
             newslist_df = newslist_df.append(df, ignore_index=True)
 
-    # Alpha Vantage
+    # Alpha Vantage 
     stockprice_df = pd.DataFrame(columns=['Code', 'Date', 'Stock_Price'])
     for code in ['AAPL', 'MSFT', 'AMZN']:
         stcok_dict = get_alpha(code, "TIME_SERIES_DAILY")['Time Series (Daily)']
@@ -349,25 +350,68 @@ if __name__ == "__main__":
             df = pd.DataFrame({'Code': code, 'Date': k, 'Stock_Price': v['4. close']}, index=[0])
             stockprice_df = stockprice_df.append(df, ignore_index=True)
 
+    time.sleep(60) # Avoid access limit (5 calls per minute)
+
     overview_df = pd.DataFrame(columns=['Code', 'Name', 'Industry', 'Address'])
     for code in ['AAPL', 'MSFT', 'AMZN']:
         overview_dict = get_alpha(code, "OVERVIEW")
         df = pd.DataFrame({'Code': code, 'Name': overview_dict['Name'],
          'Industry': overview_dict['Industry'], "Address": overview_dict['Address']}, index=[0])
         overview_df = overview_df.append(df, ignore_index=True)
+        
+
+    save_cache(CACHE_DICT)
+
 
     # Create a database
     dbname = 'Database.sqlite'
     conn = sqlite3.connect(dbname)
     cur = conn.cursor()
 
-    twitter_df.to_sql('twitter', conn, if_exists='replace')
-    newslist_df.to_sql('newslist', conn, if_exists='replace')
-    stockprice_df.to_sql('stockprice', conn, if_exists='replace')
-    overview_df.to_sql('overview', conn, if_exists='replace')
+    cur.execute('DROP table IF EXISTS twitter')
+    cur.execute('DROP table IF EXISTS newslist')
+    cur.execute('DROP table IF EXISTS stockprice')
+    cur.execute('DROP table IF EXISTS overview')
+
+    sql = """
+        CREATE TABLE twitter("index" INTEGER PRIMARY KEY AUTOINCREMENT,
+                            Code TEXT "FOREIGN KEY",
+                            Date TEXT NOT NULL,
+                            Sentiment_Score REAL NOT NULL)
+    """
+    cur.execute(sql)
+
+    sql = """
+        CREATE TABLE newslist("index" INTEGER PRIMARY KEY AUTOINCREMENT,
+                            Code TEXT "FOREIGN KEY",
+                            Headline TEXT NOT NULL,
+                            URL TEXT NOT NULL,
+                            Sentiment_Score REAL NOT NULL)
+    """
+    cur.execute(sql)
+
+    sql = """
+        CREATE TABLE stockprice("index" INTEGER PRIMARY KEY AUTOINCREMENT,
+                            Code TEXT "FOREIGN KEY",
+                            Date TEXT NOT NULL,
+                            Stock_Price REAL NOT NULL)
+    """
+    cur.execute(sql)
+
+    sql = """
+        CREATE TABLE overview(Code TEXT "PRIMARY KEY",
+                            Name TEXT NOT NULL,
+                            Industry TEXT NOT NULL,
+                            Address TEXT NOT NULL)
+    """
+    cur.execute(sql)
+
+    twitter_df.to_sql('twitter', conn, if_exists='append')
+    newslist_df.to_sql('newslist', conn, if_exists='append')
+    stockprice_df.to_sql('stockprice', conn, if_exists='append')
+    overview_df.to_sql('overview', conn, if_exists='append', index=False)
 
     cur.close()
     conn.close()
 
-    save_cache(CACHE_DICT)
     
